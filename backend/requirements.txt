@@ -1,0 +1,44 @@
+# FastAPI and server
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+python-dotenv>=1.0.1
+fastapi[standard]
+
+# Database
+psycopg2-binary>=2.9.9
+
+# Pydantic
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+
+# Authentication
+PyJWT>=2.9.0
+python-jose[cryptography]>=3.3.0
+
+# Google APIs
+google-api-python-client>=2.154.0
+google-auth>=2.36.0
+google-auth-oauthlib>=1.2.1
+google-auth-httplib2>=0.2.0
+
+# LLM
+litellm>=1.52.0
+openai>=1.55.0
+
+# HTTP client
+httpx>=0.28.0
+aiohttp>=3.11.0
+
+# Email
+aiosmtplib>=3.0.2
+
+# Utilities
+python-dateutil>=2.9.0
+pytz>=2024.2
+
+# Logging and monitoring
+prometheus-client>=0.21.0
+
+# Async
+asyncio-throttle>=1.0.2
