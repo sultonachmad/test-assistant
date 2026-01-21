@@ -222,6 +222,216 @@ Return ONLY valid JSON in this exact format:
                 "description": result
             }
 
+    async def generate_task_comment(
+        self,
+        task,
+        comment_type: str,
+        user_prompt: Optional[str] = None,
+        context_comments: Optional[List] = None
+    ) -> Dict[str, Any]:
+        """Generate an AI comment for a task.
+
+        Args:
+            task: The task object
+            comment_type: One of 'ask', 'update', 'solution', 'test_case'
+            user_prompt: Optional user prompt for additional context
+            context_comments: Optional list of selected comments for context
+
+        Returns:
+            Dict with 'content' and optionally 'estimated_days', 'suggested_start_date', 'suggested_due_date'
+        """
+        from datetime import datetime, timedelta
+
+        # Build task context
+        task_context = f"""Task Information:
+- Title: {task.title}
+- Description: {task.description or 'No description'}
+- Status: {task.status}
+- Priority: {task.priority}
+- Project: {task.project or 'Not specified'}
+- Assigned to: {task.assigned_to or 'Not assigned'}
+- Start date: {task.start_date.strftime('%Y-%m-%d') if task.start_date else 'Not set'}
+- Due date: {task.due_date.strftime('%Y-%m-%d') if task.due_date else 'Not set'}"""
+
+        # Build comments context
+        comments_context = ""
+        if context_comments:
+            comments_text = []
+            for c in context_comments:
+                comments_text.append(f"[{c.comment_type.upper()}] {c.content}")
+            comments_context = f"\n\nSelected Comments for Context:\n" + "\n---\n".join(comments_text)
+
+        # Build type-specific prompt
+        type_prompts = {
+            "ask": """Generate a clarifying question to gather more information about this task.
+The question should help understand requirements, scope, or missing details.
+Format: Write a clear, professional question in Markdown format.""",
+
+            "update": """Generate a progress update comment for this task.
+The update should describe potential progress, blockers, or status changes.
+Format: Write a concise progress update in Markdown format with bullet points if needed.""",
+
+            "solution": """Generate a solution comment that:
+1. Analyzes the task and identifies the approach or root cause
+2. Proposes a solution or implementation plan
+3. Estimates the effort in working days (mandays)
+
+You MUST return valid JSON with these fields:
+{
+  "content": "Your markdown solution content here",
+  "estimated_days": <number of working days as integer>
+}""",
+
+            "test_case": """Generate test cases or completion criteria for this task.
+Include:
+- Test scenarios to verify the task is complete
+- Acceptance criteria checklist
+- Edge cases to consider
+
+Format: Write in Markdown format with checkboxes (- [ ] item) for each test case."""
+        }
+
+        prompt = f"""{task_context}{comments_context}
+
+{user_prompt or ''}
+
+{type_prompts.get(comment_type, type_prompts['update'])}"""
+
+        messages = [
+            {"role": "system", "content": "You are a helpful project management assistant that writes clear, professional task comments. Always provide actionable and specific content."},
+            {"role": "user", "content": prompt}
+        ]
+
+        try:
+            result = await self._call_llm(messages, model=self.summary_model, temperature=0.5, max_tokens=1000)
+            result = result.strip()
+
+            # For solution type, parse JSON response
+            if comment_type == "solution":
+                # Clean up response
+                if result.startswith("```json"):
+                    result = result[7:]
+                if result.startswith("```"):
+                    result = result[3:]
+                if result.endswith("```"):
+                    result = result[:-3]
+                result = result.strip()
+
+                try:
+                    parsed = json.loads(result)
+                    content = parsed.get("content", result)
+                    estimated_days = parsed.get("estimated_days", 1)
+
+                    # Calculate suggested dates
+                    start_date = task.start_date or datetime.utcnow()
+                    if isinstance(start_date, str):
+                        start_date = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+
+                    # Due date = start_date + estimated_days + 1 (buffer)
+                    due_date = start_date + timedelta(days=estimated_days + 1)
+
+                    return {
+                        "content": content,
+                        "estimated_days": estimated_days,
+                        "suggested_start_date": start_date,
+                        "suggested_due_date": due_date
+                    }
+                except json.JSONDecodeError:
+                    # Fallback: use content as-is with default estimation
+                    return {
+                        "content": result,
+                        "estimated_days": 1,
+                        "suggested_start_date": task.start_date or datetime.utcnow(),
+                        "suggested_due_date": (task.start_date or datetime.utcnow()) + timedelta(days=2)
+                    }
+            else:
+                return {"content": result}
+
+        except Exception as e:
+            logger.error(f"Error generating task comment: {e}")
+            raise
+
+    async def suggest_tasks_from_comments(
+        self,
+        task,
+        comments: List,
+        user_prompt: Optional[str] = None
+    ) -> List[Dict]:
+        """Generate task suggestions from selected comments (like email suggestion).
+
+        Args:
+            task: The parent task object
+            comments: List of selected comments for context
+            user_prompt: Optional user prompt for additional context
+
+        Returns:
+            List of task suggestion dicts
+        """
+        # Build task context
+        task_context = f"""Parent Task:
+- Title: {task.title}
+- Description: {task.description or 'No description'}
+- Project: {task.project or 'Not specified'}"""
+
+        # Build comments context
+        comments_text = []
+        for c in comments:
+            comments_text.append(f"[{c.comment_type.upper()}]\n{c.content}")
+        comments_context = "\n\n---\n\n".join(comments_text)
+
+        prompt = f"""{task_context}
+
+Selected Comments:
+{comments_context}
+
+{user_prompt or ''}
+
+Based on the task and selected comments above, generate sub-tasks or follow-up tasks.
+Each task should be specific, actionable, and derived from the comments.
+
+Return ONLY valid JSON array with this format:
+[
+  {{
+    "title": "Task title",
+    "description": "Task description in Markdown",
+    "priority": "low|medium|high|urgent",
+    "estimated_days": <number>
+  }}
+]
+
+Generate 1-5 relevant tasks based on the content."""
+
+        messages = [
+            {"role": "system", "content": "You are a helpful project management assistant that creates actionable sub-tasks from discussion comments. Always return valid JSON array."},
+            {"role": "user", "content": prompt}
+        ]
+
+        try:
+            result = await self._call_llm(messages, model=self.summary_model, temperature=0.5, max_tokens=1500)
+            result = result.strip()
+
+            # Clean up response
+            if result.startswith("```json"):
+                result = result[7:]
+            if result.startswith("```"):
+                result = result[3:]
+            if result.endswith("```"):
+                result = result[:-3]
+            result = result.strip()
+
+            suggestions = json.loads(result)
+            if not isinstance(suggestions, list):
+                suggestions = [suggestions]
+
+            return suggestions
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse task suggestions: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Error generating task suggestions: {e}")
+            raise
+
 
 # Singleton instance
 llm_client = LLMClient()

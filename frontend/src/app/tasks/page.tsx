@@ -13,15 +13,18 @@ import {
   Loader2,
   Sparkles,
   Repeat,
+  Trash2,
 } from "lucide-react";
 import Header from "@/components/layout/header";
 import LoadingSpinner from "@/components/common/loading-spinner";
 import MarkdownEditor from "@/components/common/markdown-editor";
 import TaskCard from "@/components/tasks/task-card";
+import TaskCommentsPanel from "@/components/tasks/task-comments-panel";
 import {
   getTasks,
   createTask,
   updateTask,
+  deleteTask,
   updateTaskStatus,
   getTaskAssignees,
   getTaskProjects,
@@ -776,6 +779,8 @@ function EditTaskModal({
     task.recurrence_end_date ? new Date(task.recurrence_end_date).toISOString().slice(0, 10) : ""
   );
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [generatingDescription, setGeneratingDescription] = useState(false);
   const [suggestedTitle, setSuggestedTitle] = useState<string | null>(null);
 
@@ -804,6 +809,20 @@ function EditTaskModal({
       toast.error("Failed to generate suggestion");
     } finally {
       setGeneratingDescription(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteTask(task.id);
+      toast.success("Task deleted");
+      onUpdated();
+    } catch (error) {
+      toast.error("Failed to delete task");
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -837,7 +856,7 @@ function EditTaskModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg w-full max-w-md mx-4 p-6 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Edit Task</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -1047,23 +1066,64 @@ function EditTaskModal({
             </div>
           )}
 
-          <div className="flex justify-end gap-3 pt-4">
+          <div className="flex justify-between gap-3 pt-4">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex items-center gap-2 px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50"
             >
-              Cancel
+              <Trash2 className="w-4 h-4" />
+              Delete
             </button>
-            <button
-              type="submit"
-              disabled={loading || !title.trim()}
-              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-            >
-              {loading ? "Saving..." : "Save Changes"}
-            </button>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading || !title.trim()}
+                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+              >
+                {loading ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
           </div>
         </form>
+
+        {/* Delete Confirmation Dialog */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+            <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Task</h3>
+              <p className="text-gray-600 mb-4">
+                Are you sure you want to delete &quot;{task.title}&quot;? This action cannot be undone.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  disabled={deleting}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Task Comments Section */}
+        <TaskCommentsPanel task={task} onTaskUpdated={onUpdated} />
       </div>
     </div>
   );

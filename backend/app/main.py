@@ -48,11 +48,12 @@ app.add_middleware(
 )
 
 # Import and register routers
-from app.api import user, tasks, reminders, notifications, auth, sync, dashboard, inbox, calendar, documents, sheets, ai, taiga, bandung_sync
+from app.api import user, tasks, reminders, notifications, auth, sync, dashboard, inbox, calendar, documents, sheets, ai, taiga, bandung_sync, task_comment
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(user.router, prefix="/api/user", tags=["User"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
+app.include_router(task_comment.router, prefix="/api/task-comments", tags=["Task Comments"])
 app.include_router(reminders.router, prefix="/api/reminders", tags=["Reminders"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
 app.include_router(sync.router, prefix="/api/sync", tags=["Sync"])

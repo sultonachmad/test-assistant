@@ -484,3 +484,84 @@ export const syncBandungResource = async (syncAll: boolean = false): Promise<Api
   });
   return response.data;
 };
+
+// Task Comments API
+import type { TaskComment, TaskCommentListResponse, AICommentResponse, CommentType, TaskSuggestion } from "./types";
+
+export const getTaskComments = async (
+  taskId: number,
+  commentType?: CommentType
+): Promise<ApiResponse<TaskCommentListResponse>> => {
+  const response = await axiosInstance.get(`/api/task-comments/${taskId}`, {
+    params: commentType ? { comment_type: commentType } : {}
+  });
+  return response.data;
+};
+
+export const createTaskComment = async (data: {
+  task_id: number;
+  comment_type: CommentType;
+  content: string;
+  estimated_days?: number;
+  suggested_start_date?: string;
+  suggested_due_date?: string;
+}): Promise<ApiResponse<TaskComment>> => {
+  const response = await axiosInstance.post("/api/task-comments/", data);
+  return response.data;
+};
+
+export const updateTaskComment = async (
+  commentId: number,
+  data: {
+    content?: string;
+    estimated_days?: number;
+    suggested_start_date?: string;
+    suggested_due_date?: string;
+  }
+): Promise<ApiResponse<TaskComment>> => {
+  const response = await axiosInstance.put(`/api/task-comments/${commentId}`, data);
+  return response.data;
+};
+
+export const deleteTaskComment = async (commentId: number): Promise<ApiResponse<{ deleted: boolean }>> => {
+  const response = await axiosInstance.delete(`/api/task-comments/${commentId}`);
+  return response.data;
+};
+
+export const generateAIComment = async (data: {
+  task_id: number;
+  comment_type: CommentType;
+  prompt?: string;
+  selected_comment_ids?: number[];
+}): Promise<ApiResponse<AICommentResponse>> => {
+  const response = await axiosInstance.post("/api/task-comments/ai-generate", data);
+  return response.data;
+};
+
+export const generateAndSaveAIComment = async (data: {
+  task_id: number;
+  comment_type: CommentType;
+  prompt?: string;
+  selected_comment_ids?: number[];
+}): Promise<ApiResponse<TaskComment>> => {
+  const response = await axiosInstance.post("/api/task-comments/ai-generate/save", data);
+  return response.data;
+};
+
+export const suggestTasksFromComments = async (data: {
+  task_id: number;
+  selected_comment_ids: number[];
+  prompt?: string;
+}): Promise<ApiResponse<{ suggestions: TaskSuggestion[] }>> => {
+  const response = await axiosInstance.post("/api/task-comments/suggest-tasks", data);
+  return response.data;
+};
+
+export const updateTaskFromSolution = async (data: {
+  comment_id: number;
+  start_date: string;
+  due_date: string;
+}): Promise<ApiResponse<{ updated: boolean }>> => {
+  const response = await axiosInstance.post("/api/task-comments/update-task-from-solution", data);
+  return response.data;
+};

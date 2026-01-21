@@ -7,6 +7,8 @@ import {
   User,
   FolderKanban,
   Calendar as CalendarIcon,
+  Filter,
+  Check,
 } from "lucide-react";
 import Header from "@/components/layout/header";
 import LoadingSpinner from "@/components/common/loading-spinner";
@@ -29,6 +31,13 @@ const statusColors: Record<TaskStatus, string> = {
   done: "bg-green-100 text-green-800 border-green-200",
 };
 
+const statusOptions: { label: string; value: TaskStatus }[] = [
+  { label: "Assigned", value: "assigned" },
+  { label: "In Progress", value: "in_progress" },
+  { label: "On Hold", value: "on_hold" },
+  { label: "Done", value: "done" },
+];
+
 const priorityIndicators: Record<string, string> = {
   urgent: "border-l-4 border-l-red-500",
   high: "border-l-4 border-l-orange-500",
@@ -45,6 +54,8 @@ export default function CalendarPage() {
   const [assignees, setAssignees] = useState<string[]>([]);
   const [projectFilter, setProjectFilter] = useState<string>("");
   const [projects, setProjects] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<TaskStatus[]>(["assigned", "in_progress"]);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   useEffect(() => {
@@ -54,7 +65,7 @@ export default function CalendarPage() {
 
   useEffect(() => {
     loadTasks();
-  }, [assigneeFilter, projectFilter]);
+  }, [assigneeFilter, projectFilter, statusFilter]);
 
   const loadAssignees = async () => {
     try {
@@ -84,6 +95,7 @@ export default function CalendarPage() {
       const response = await getTasks({
         assigned_to: assigneeFilter || undefined,
         project: projectFilter || undefined,
+        status: statusFilter.length > 0 ? statusFilter.join(",") : undefined,
         limit: 500, // Get more tasks for calendar view
       });
       if (response.status && response.data) {
@@ -94,6 +106,14 @@ export default function CalendarPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleStatusFilter = (status: TaskStatus) => {
+    setStatusFilter((prev) =>
+      prev.includes(status)
+        ? prev.filter((s) => s !== status)
+        : [...prev, status]
+    );
   };
 
   // Get calendar data
@@ -240,6 +260,60 @@ export default function CalendarPage() {
 
           {/* Filters */}
           <div className="flex items-center gap-4">
+            {/* Status Filter */}
+            <div className="relative">
+              <button
+                onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+                className="flex items-center gap-2 px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              >
+                <Filter className="w-4 h-4 text-gray-500" />
+                <span>
+                  Status{" "}
+                  {statusFilter.length > 0 && (
+                    <span className="text-primary-600">({statusFilter.length})</span>
+                  )}
+                </span>
+              </button>
+              {showStatusDropdown && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowStatusDropdown(false)}
+                  />
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-[160px]">
+                    {statusOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => toggleStatusFilter(option.value)}
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-left hover:bg-gray-50"
+                      >
+                        <div
+                          className={cn(
+                            "w-4 h-4 border rounded flex items-center justify-center",
+                            statusFilter.includes(option.value)
+                              ? "bg-primary-600 border-primary-600"
+                              : "border-gray-300"
+                          )}
+                        >
+                          {statusFilter.includes(option.value) && (
+                            <Check className="w-3 h-3 text-white" />
+                          )}
+                        </div>
+                        <span
+                          className={cn(
+                            "px-1.5 py-0.5 rounded text-xs",
+                            statusColors[option.value]
+                          )}
+                        >
+                          {option.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
             {/* Assignee Filter */}
             {assignees.length > 0 && (
               <div className="flex items-center gap-2">

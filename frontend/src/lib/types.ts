@@ -152,6 +152,43 @@ export interface SyncStatus {
   error?: string;
 }
 
+// Task Comment types
+export type CommentType = "ask" | "update" | "solution" | "test_case";
+
+export interface TaskComment {
+  id: number;
+  task_id: number;
+  user_id: number;
+  comment_type: CommentType;
+  content: string;
+  is_ai_generated: boolean;
+  ai_prompt?: string;
+  estimated_days?: number;
+  suggested_start_date?: string;
+  suggested_due_date?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskCommentListResponse {
+  comments: TaskComment[];
+  counts: Record<CommentType, number>;
+}
+
+export interface AICommentResponse {
+  content: string;
+  estimated_days?: number;
+  suggested_start_date?: string;
+  suggested_due_date?: string;
+}
+
+export interface TaskSuggestion {
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  estimated_days?: number;
+}
+
 // API Response types
 export interface ApiResponse<T> {
   status: boolean;

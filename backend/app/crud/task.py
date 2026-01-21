@@ -65,8 +65,15 @@ class TaskDB:
                 values = [user_id]
 
                 if status:
-                    where_clauses.append("status = %s")
-                    values.append(status)
+                    # Support comma-separated status values for multi-select
+                    status_list = [s.strip() for s in status.split(",")]
+                    if len(status_list) == 1:
+                        where_clauses.append("status = %s")
+                        values.append(status_list[0])
+                    else:
+                        placeholders = ", ".join(["%s"] * len(status_list))
+                        where_clauses.append(f"status IN ({placeholders})")
+                        values.extend(status_list)
                 if priority:
                     where_clauses.append("priority = %s")
                     values.append(priority)

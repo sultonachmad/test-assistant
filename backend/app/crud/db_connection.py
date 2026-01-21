@@ -387,6 +387,30 @@ class ConnectionManager:
                     )
                 """)
 
+                # Task comments table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS task_comments (
+                        id SERIAL PRIMARY KEY,
+                        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        comment_type VARCHAR(20) NOT NULL,
+                        content TEXT NOT NULL,
+                        is_ai_generated BOOLEAN DEFAULT FALSE,
+                        ai_prompt TEXT,
+                        estimated_days INTEGER,
+                        suggested_start_date TIMESTAMP,
+                        suggested_due_date TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id)
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_task_comments_type ON task_comments(task_id, comment_type)
+                """)
+
                 conn.commit()
                 logger.info("Database tables initialized successfully")
 

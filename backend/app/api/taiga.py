@@ -9,11 +9,48 @@ from app.core.config import settings
 from app.core.taiga_client import TaigaClient
 from app.crud.taiga import taiga_config_db, taiga_cards_db
 from app.crud.task import task_db
+from app.crud.task_comment import task_comment_db
 from app.schemas.response import StandardResponse
 from app.schemas.task import TaskStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def format_comments_for_taiga(comments: list) -> str:
+    """Format task comments for Taiga description.
+
+    Args:
+        comments: List of TaskComment objects
+
+    Returns:
+        Markdown formatted string with all comments
+    """
+    if not comments:
+        return ""
+
+    comment_type_labels = {
+        "ask": "Question",
+        "update": "Update",
+        "solution": "Solution",
+        "test_case": "Test Case"
+    }
+
+    sections = []
+    for comment in comments:
+        type_label = comment_type_labels.get(comment.comment_type, comment.comment_type.title())
+        ai_badge = " (AI)" if comment.is_ai_generated else ""
+        date_str = comment.created_at.strftime("%Y-%m-%d %H:%M") if hasattr(comment.created_at, 'strftime') else str(comment.created_at)[:16]
+
+        section = f"### {type_label}{ai_badge} - {date_str}\n\n{comment.content}"
+
+        # Add estimated days for solution type
+        if comment.comment_type == "solution" and comment.estimated_days:
+            section += f"\n\n**Estimated:** {comment.estimated_days} days"
+
+        sections.append(section)
+
+    return "\n\n---\n\n".join(sections)
 
 
 class TaigaConfigRequest(BaseModel):
@@ -221,9 +258,29 @@ async def sync_tasks_to_taiga(
 
         try:
             if existing_card:
-                # Task is already linked - update status and dates from Taiga
+                # Task is already linked - update Taiga story with latest comments and sync back
                 taiga_story = await client.get_user_story(existing_card["card_id"])
                 if taiga_story:
+                    # First, update Taiga with latest task description and comments
+                    description = task.description or ""
+                    if task.project:
+                        description = f"**Project:** {task.project}\n\n{description}"
+
+                    # Get task comments and append to description
+                    task_comments = task_comment_db.get_by_task(task_id, current_user["id"])
+                    if task_comments:
+                        comments_section = format_comments_for_taiga(task_comments)
+                        description = f"{description}\n\n---\n\n## Comments\n\n{comments_section}"
+
+                    # Update Taiga story with new description
+                    story_version = taiga_story.get("version", 1)
+                    await client.update_user_story(
+                        story_id=existing_card["card_id"],
+                        version=story_version,
+                        description=description
+                    )
+
+                    # Now sync status and dates from Taiga back to local task
                     taiga_status_name = taiga_story.get("status_extra_info", {}).get("name", "")
                     new_task_status_str = client.map_taiga_status_to_task(taiga_status_name)
                     new_task_status = TaskStatus(new_task_status_str)
@@ -260,6 +317,10 @@ async def sync_tasks_to_taiga(
                         current_user["id"],
                         taiga_status_name
                     )
+
+                    # Add comment count to message
+                    if task_comments:
+                        update_messages.append(f"Comments: {len(task_comments)}")
 
                     results.append(SyncResult(
                         task_id=task_id,
@@ -308,6 +369,12 @@ async def sync_tasks_to_taiga(
                     description = task.description or ""
                     if task.project:
                         description = f"**Project:** {task.project}\n\n{description}"
+
+                    # Get task comments and append to description
+                    task_comments = task_comment_db.get_by_task(task_id, current_user["id"])
+                    if task_comments:
+                        comments_section = format_comments_for_taiga(task_comments)
+                        description = f"{description}\n\n---\n\n## Comments\n\n{comments_section}"
 
                     # Combine project, priority and task tags
                     all_tags = []

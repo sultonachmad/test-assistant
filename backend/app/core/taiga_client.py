@@ -202,6 +202,41 @@ class TaigaClient:
         }
         return await self._request("PATCH", f"/userstories/{story_id}", data=data)
 
+    async def update_user_story(
+        self,
+        story_id: int,
+        version: int,
+        description: str = None,
+        subject: str = None,
+        status_id: int = None,
+        tags: List[str] = None,
+        due_date: str = None,
+    ) -> Optional[Dict]:
+        """Update a user story with multiple fields.
+
+        Args:
+            story_id: The Taiga story ID
+            version: Current version for optimistic locking
+            description: New description (optional)
+            subject: New title (optional)
+            status_id: New status ID (optional)
+            tags: New tags list (optional)
+            due_date: New due date (optional)
+        """
+        data = {"version": version}
+        if description is not None:
+            data["description"] = description
+        if subject is not None:
+            data["subject"] = subject
+        if status_id is not None:
+            data["status"] = status_id
+        if tags is not None:
+            data["tags"] = tags
+        if due_date is not None:
+            data["due_date"] = due_date
+
+        return await self._request("PATCH", f"/userstories/{story_id}", data=data)
+
     async def list_user_stories(
         self,
         project_id: int = None,
