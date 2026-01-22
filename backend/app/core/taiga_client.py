@@ -157,6 +157,13 @@ class TaigaClient:
         """Get a specific user story."""
         return await self._request("GET", f"/userstories/{story_id}")
 
+    async def get_user_story_by_ref(self, ref: int, project_id: int = None) -> Optional[Dict]:
+        """Get a user story by reference number (the number shown in URL like /us/411)."""
+        pid = project_id or await self.resolve_project_id()
+        if not pid:
+            raise ValueError("Project ID not configured")
+        return await self._request("GET", f"/userstories/by_ref", params={"ref": ref, "project": pid})
+
     async def create_user_story(
         self,
         subject: str,
@@ -294,9 +301,12 @@ class TaigaClient:
         """Map Taiga status name to internal task status."""
         status_name = taiga_status_name.lower()
 
+        # Taiga statuses that map to "done"
         done_names = ["done", "closed", "completed", "finished", "archived"]
-        in_progress_names = ["in progress", "doing", "started", "testing"]
-        on_hold_names = ["blocked", "on hold", "waiting", "needs info"]
+        # Taiga statuses that map to "in_progress"
+        in_progress_names = ["in progress", "dev in progress", "doing", "started", "testing", "development", "review"]
+        # Taiga statuses that map to "on_hold"
+        on_hold_names = ["blocked", "on hold", "waiting", "needs info", "postponed", "deferred"]
 
         if status_name in done_names:
             return "done"

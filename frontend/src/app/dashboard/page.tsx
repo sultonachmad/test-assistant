@@ -6,7 +6,6 @@ import {
   Clock,
   AlertCircle,
   Calendar,
-  Bell,
   Filter,
   User,
   FolderKanban,
@@ -14,9 +13,7 @@ import {
 } from "lucide-react";
 import Header from "@/components/layout/header";
 import LoadingSpinner from "@/components/common/loading-spinner";
-import TaskCard from "@/components/tasks/task-card";
 import { getDashboard, getTasks, getTaskAssignees, getTaskProjects } from "@/lib/api";
-import { formatDate, formatRelativeTime } from "@/lib/utils";
 import { useGoogleTokenSync } from "@/lib/use-google-token-sync";
 import type { DashboardData, Task } from "@/lib/types";
 
@@ -36,7 +33,7 @@ export default function DashboardPage() {
   const [assignees, setAssignees] = useState<string[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
   const [filteredTasks, setFilteredTasks] = useState<Task[]>([]);
-  const [tasksLoading, setTasksLoading] = useState(true); // Start with loading state
+  const [tasksLoading, setTasksLoading] = useState(true);
 
   // Sync Google tokens to backend
   useGoogleTokenSync();
@@ -97,11 +94,9 @@ export default function DashboardPage() {
         project: projectFilter || undefined,
         limit: 500,
       });
-      console.log("Tasks API response:", response);
 
       if (response.status && response.data) {
         let tasks = response.data.tasks || [];
-        console.log("Tasks loaded:", tasks.length);
 
         // Client-side date filtering (only filter if task has the date field)
         if (startDateFrom) {
@@ -159,10 +154,8 @@ export default function DashboardPage() {
           });
         }
 
-        console.log("Tasks after filtering:", tasks.length);
         setFilteredTasks(tasks);
       } else {
-        console.log("No data in response");
         setFilteredTasks([]);
       }
     } catch (error) {
@@ -361,7 +354,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Task Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <StatCard
             title="Total Tasks"
             value={displaySummary.total}
@@ -392,77 +385,8 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Upcoming Reminders */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Bell className="w-5 h-5 text-gray-500" />
-              <h2 className="text-lg font-semibold text-gray-900">
-                Upcoming Reminders
-              </h2>
-            </div>
-            {data.upcoming_reminders.length === 0 ? (
-              <p className="text-gray-500 text-sm">No upcoming reminders</p>
-            ) : (
-              <div className="space-y-3">
-                {data.upcoming_reminders.map((reminder: any) => (
-                  <div
-                    key={reminder.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                  >
-                    <div>
-                      <p className="font-medium text-gray-900">
-                        {reminder.title}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {formatDate(reminder.remind_at)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Recent Notifications */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Bell className="w-5 h-5 text-gray-500" />
-              <h2 className="text-lg font-semibold text-gray-900">
-                Recent Notifications
-              </h2>
-            </div>
-            {data.recent_notifications.length === 0 ? (
-              <p className="text-gray-500 text-sm">No notifications</p>
-            ) : (
-              <div className="space-y-3">
-                {data.recent_notifications.map((notification: any) => (
-                  <div
-                    key={notification.id}
-                    className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"
-                  >
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">
-                        {notification.title}
-                      </p>
-                      {notification.message && (
-                        <p className="text-sm text-gray-500">
-                          {notification.message}
-                        </p>
-                      )}
-                      <p className="text-xs text-gray-400 mt-1">
-                        {formatRelativeTime(notification.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Task Status Breakdown */}
-        <div className="mt-6 bg-white rounded-lg border border-gray-200 p-6">
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Task Breakdown
             {hasActiveFilters && (
@@ -496,37 +420,6 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
-
-        {/* Filtered Task List */}
-        <div className="mt-6 bg-white rounded-lg border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Tasks
-              {hasActiveFilters && (
-                <span className="ml-2 text-sm font-normal text-gray-500">
-                  ({filteredTasks.length} matching filters)
-                </span>
-              )}
-            </h2>
-          </div>
-          {tasksLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <LoadingSpinner size="md" />
-            </div>
-          ) : filteredTasks.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-gray-500">
-                {hasActiveFilters ? "No tasks match your filters" : "No tasks found"}
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-3 max-h-96 overflow-y-auto">
-              {filteredTasks.map((task) => (
-                <TaskCard key={task.id} task={task} />
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
@@ -536,7 +429,6 @@ function StatCard({
   title,
   value,
   icon,
-  color,
   loading,
 }: {
   title: string;

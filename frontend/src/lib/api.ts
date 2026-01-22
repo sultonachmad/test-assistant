@@ -394,6 +394,32 @@ export const getLinkedTaigaTasks = async (): Promise<ApiResponse<any[]>> => {
   return response.data;
 };
 
+export interface LinkToTaigaResponse {
+  task_id: number;
+  taiga_id: number;
+  taiga_ref: number;
+  taiga_url: string;
+  subject: string;
+}
+
+export const linkTaskToTaiga = async (
+  taskId: number,
+  taigaUrl: string
+): Promise<ApiResponse<LinkToTaigaResponse>> => {
+  const response = await axiosInstance.post("/api/taiga/link-task", {
+    task_id: taskId,
+    taiga_url: taigaUrl,
+  });
+  return response.data;
+};
+
+export const unlinkTaskFromTaiga = async (
+  taskId: number
+): Promise<ApiResponse<{ task_id: number; unlinked_taiga_id: number }>> => {
+  const response = await axiosInstance.post(`/api/taiga/unlink-task/${taskId}`);
+  return response.data;
+};
+
 // Bandung Resource Sync API
 export interface BandungSyncColumnMapping {
   start_date: string;

@@ -476,20 +476,26 @@ async def sync_tasks_to_taiga(
 @router.post("/update-from-taiga", response_model=StandardResponse[UpdateFromTaigaResponse])
 async def update_all_from_taiga(current_user: dict = Depends(get_current_user)):
     """
-    Update all linked tasks from Taiga.
-    Syncs: status, start_date (from created_date), due_date, completed_date (from finish_date).
-    Only updates tasks that are already connected to Taiga.
+    Update linked tasks from Taiga.
+    Only updates tasks with status 'assigned' or 'in_progress'.
+    Tasks with status 'done' or 'on_hold' are excluded from updates.
+
+    Taiga status mapping:
+    - 'done', 'closed', 'completed', 'finished', 'archived' -> done
+    - 'in progress', 'dev in progress', 'doing', 'started', 'testing', 'development', 'review' -> in_progress
+    - 'blocked', 'on hold', 'waiting', 'needs info', 'postponed', 'deferred' -> on_hold
+    - Others -> assigned
     """
     client = get_taiga_client(current_user["id"])
 
-    # Get all linked cards
-    linked_cards = taiga_cards_db.get_all_linked_cards(current_user["id"])
+    # Get linked cards for tasks that can be updated (only 'assigned' and 'in_progress' tasks)
+    linked_cards = taiga_cards_db.get_linked_cards_for_update(current_user["id"])
 
     if not linked_cards:
         return StandardResponse(
             status=True,
             data=UpdateFromTaigaResponse(updated_count=0, results=[]),
-            message="No tasks linked to Taiga"
+            message="No tasks to update (only 'assigned' and 'in_progress' tasks are updated from Taiga)"
         )
 
     results = []
@@ -502,7 +508,7 @@ async def update_all_from_taiga(current_user: dict = Depends(get_current_user)):
                 # Extract status
                 taiga_status_name = taiga_story.get("status_extra_info", {}).get("name", "")
                 new_task_status_str = client.map_taiga_status_to_task(taiga_status_name)
-                new_task_status = TaskStatus(new_task_status_str)
+                current_task_status = card.get("task_status", "unknown")
 
                 # Extract dates from Taiga story
                 dates = client.extract_dates_from_story(taiga_story)
@@ -513,7 +519,7 @@ async def update_all_from_taiga(current_user: dict = Depends(get_current_user)):
                 }
 
                 # Add dates if they exist in Taiga
-                update_messages = [f"Status: {taiga_status_name} -> {new_task_status_str}"]
+                update_messages = [f"Taiga: '{taiga_status_name}' | {current_task_status} -> {new_task_status_str}"]
 
                 if dates.get("start_date"):
                     update_data["start_date"] = dates["start_date"]
@@ -577,3 +583,186 @@ async def get_linked_tasks(current_user: dict = Depends(get_current_user)):
     """Get all tasks that are linked to Taiga."""
     linked_cards = taiga_cards_db.get_all_linked_cards(current_user["id"])
     return StandardResponse(status=True, data=linked_cards)
+
+
+class LinkToTaigaRequest(BaseModel):
+    """Request to link a task to an existing Taiga user story."""
+    task_id: int
+    taiga_url: str  # URL like https://taiga.ecquaria.org/project/tecq-ai-bd/us/411
+
+
+class LinkToTaigaResponse(BaseModel):
+    """Response for linking a task to Taiga."""
+    task_id: int
+    taiga_id: int
+    taiga_ref: int
+    taiga_url: str
+    subject: str
+
+
+@router.post("/link-task", response_model=StandardResponse[LinkToTaigaResponse])
+async def link_task_to_taiga(
+    request: LinkToTaigaRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Link an existing task to an existing Taiga user story by URL.
+
+    This allows manually connecting tasks that were already created in Taiga
+    to local tasks for syncing.
+
+    URL format: https://taiga.ecquaria.org/project/tecq-ai-bd/us/411
+    """
+    import re
+
+    user_id = current_user["id"]
+
+    # Parse the Taiga URL to extract project slug and story ref
+    # Format: https://taiga.ecquaria.org/project/{project-slug}/us/{ref}
+    url_pattern = r'/project/([^/]+)/us/(\d+)'
+    match = re.search(url_pattern, request.taiga_url)
+
+    if not match:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Taiga URL format. Expected format: https://taiga.example.org/project/project-slug/us/123"
+        )
+
+    project_slug = match.group(1)
+    story_ref = int(match.group(2))
+
+    # Verify task exists
+    task = task_db.get_by_id(request.task_id, user_id)
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+
+    # Check if task is already linked to a Taiga card
+    existing_card = taiga_cards_db.get_card_by_task_id(user_id, request.task_id)
+
+    try:
+        client = get_taiga_client(user_id)
+        await client._ensure_authenticated()
+
+        # Resolve the project by slug if needed
+        project = await client._request("GET", f"/projects/by_slug", params={"slug": project_slug})
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Taiga project '{project_slug}' not found"
+            )
+
+        project_id = project["id"]
+
+        # Get the user story by reference
+        story = await client.get_user_story_by_ref(story_ref, project_id)
+        if not story:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Taiga user story #{story_ref} not found in project '{project_slug}'"
+            )
+
+        # Check if this Taiga story is already linked to another task (not this one)
+        existing_link = taiga_cards_db.get_card_by_taiga_id(user_id, story["id"], "userstory")
+        if existing_link and existing_link['task_id'] != request.task_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"This Taiga story is already linked to task #{existing_link['task_id']}"
+            )
+
+        is_update = existing_card is not None
+
+        if existing_card:
+            # Update existing link - delete old and create new
+            taiga_cards_db.delete_card(existing_card["id"], user_id)
+
+        # Create the link in taiga_cards table
+        taiga_cards_db.create_card(
+            user_id=user_id,
+            card_id=story["id"],
+            card_type="userstory",
+            subject=story["subject"],
+            status=story.get("status_extra_info", {}).get("name", "Unknown"),
+            task_id=request.task_id,
+            due_date=story.get("due_date"),
+        )
+
+        # Update task with Taiga source info
+        task_db.update_from_dict(request.task_id, user_id, {
+            "source_type": "taiga",
+            "source_id": str(story["id"]),
+            "source_url": request.taiga_url,
+        })
+
+        action = "updated" if is_update else "linked"
+        logger.info(f"{action.capitalize()} task {request.task_id} to Taiga story #{story_ref} (ID: {story['id']})")
+
+        return StandardResponse(
+            status=True,
+            data=LinkToTaigaResponse(
+                task_id=request.task_id,
+                taiga_id=story["id"],
+                taiga_ref=story["ref"],
+                taiga_url=request.taiga_url,
+                subject=story["subject"],
+            ),
+            message=f"Task {action} to Taiga story #{story_ref}"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error linking task to Taiga: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to link task to Taiga: {str(e)}"
+        )
+
+
+@router.post("/unlink-task/{task_id}", response_model=StandardResponse[dict])
+async def unlink_task_from_taiga(
+    task_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Unlink a task from Taiga.
+
+    This removes the link but does not delete the Taiga story.
+    """
+    user_id = current_user["id"]
+
+    # Verify task exists
+    task = task_db.get_by_id(task_id, user_id)
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
+
+    # Check if task is linked
+    existing_card = taiga_cards_db.get_card_by_task_id(user_id, task_id)
+    if not existing_card:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Task is not linked to Taiga"
+        )
+
+    # Delete the taiga_cards record
+    taiga_cards_db.delete_card(existing_card["id"], user_id)
+
+    # Clear task source info
+    task_db.update_from_dict(task_id, user_id, {
+        "source_type": None,
+        "source_id": None,
+        "source_url": None,
+    })
+
+    logger.info(f"Unlinked task {task_id} from Taiga story #{existing_card['card_id']}")
+
+    return StandardResponse(
+        status=True,
+        data={"task_id": task_id, "unlinked_taiga_id": existing_card["card_id"]},
+        message="Task unlinked from Taiga"
+    )

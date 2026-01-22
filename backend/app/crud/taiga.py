@@ -126,6 +126,29 @@ class TaigaCardsDB:
             logger.error(f"Error getting linked cards: {e}")
             return []
 
+    def get_linked_cards_for_update(self, user_id: int) -> List[Dict]:
+        """
+        Get Taiga cards linked to tasks that can be updated from Taiga.
+        Only returns cards linked to tasks with status 'assigned' or 'in_progress'.
+        Tasks with status 'done' or 'on_hold' are excluded from Taiga updates.
+        """
+        try:
+            with self.db.connect() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT tc.*, t.title as task_title, t.status as task_status
+                    FROM taiga_cards tc
+                    JOIN tasks t ON tc.task_id = t.id
+                    WHERE tc.user_id = %s
+                      AND tc.task_id IS NOT NULL
+                      AND t.status IN ('assigned', 'in_progress')
+                    ORDER BY tc.updated_at DESC
+                """, (user_id,))
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Error getting linked cards for update: {e}")
+            return []
+
     def create_card(
         self,
         user_id: int,

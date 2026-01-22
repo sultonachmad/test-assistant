@@ -317,6 +317,24 @@ async def sync_sheet_tasks(
     )
 
 
+def get_field_value(field_mapping: dict, field_name: str, row: dict) -> str | None:
+    """
+    Get value for a field from either a column or custom value.
+    Custom values are prefixed with 'custom:'.
+    Returns None if field is not mapped.
+    """
+    mapping = field_mapping.get(field_name)
+    if not mapping:
+        return None
+
+    if mapping.startswith('custom:'):
+        # Custom/hardcoded value
+        return mapping[7:]  # Remove 'custom:' prefix
+    else:
+        # Column mapping - get value from row
+        return row.get(mapping)
+
+
 async def run_sheet_sync(user_id: int, config_id: int):
     """Background task to sync tasks from a Google Sheet."""
     try:
@@ -336,24 +354,26 @@ async def run_sheet_sync(user_id: int, config_id: int):
 
         for row in rows:
             # Skip empty rows (no title)
-            title_col = field_mapping.get('title')
-            if not title_col or not row.get(title_col):
+            title_value = get_field_value(field_mapping, 'title', row)
+            if not title_value:
                 continue
 
             # Map fields
             task_data = {
-                'title': row.get(title_col, '').strip(),
+                'title': title_value.strip(),
                 'source_type': 'google_sheet',
                 'source_id': f"{config['spreadsheet_id']}:{config['sheet_name']}",
                 'source_url': config['spreadsheet_url'],
             }
 
-            # Map optional fields
-            if field_mapping.get('description') and row.get(field_mapping['description']):
-                task_data['description'] = row.get(field_mapping['description'])
+            # Map optional fields using helper that supports custom values
+            description = get_field_value(field_mapping, 'description', row)
+            if description:
+                task_data['description'] = description
 
-            if field_mapping.get('status') and row.get(field_mapping['status']):
-                status_value = row.get(field_mapping['status']).lower().strip()
+            status_value = get_field_value(field_mapping, 'status', row)
+            if status_value:
+                status_value = status_value.lower().strip()
                 # Map common status values
                 status_map = {
                     'done': 'done',
@@ -375,8 +395,9 @@ async def run_sheet_sync(user_id: int, config_id: int):
                 }
                 task_data['status'] = status_map.get(status_value, 'assigned')
 
-            if field_mapping.get('priority') and row.get(field_mapping['priority']):
-                priority_value = row.get(field_mapping['priority']).lower().strip()
+            priority_value = get_field_value(field_mapping, 'priority', row)
+            if priority_value:
+                priority_value = priority_value.lower().strip()
                 priority_map = {
                     'low': 'low',
                     'medium': 'medium',
@@ -387,23 +408,29 @@ async def run_sheet_sync(user_id: int, config_id: int):
                 }
                 task_data['priority'] = priority_map.get(priority_value, 'medium')
 
-            if field_mapping.get('project') and row.get(field_mapping['project']):
-                task_data['project'] = row.get(field_mapping['project']).strip()
+            project = get_field_value(field_mapping, 'project', row)
+            if project:
+                task_data['project'] = project.strip()
 
-            if field_mapping.get('start_date') and row.get(field_mapping['start_date']):
-                task_data['start_date'] = row.get(field_mapping['start_date'])
+            start_date = get_field_value(field_mapping, 'start_date', row)
+            if start_date:
+                task_data['start_date'] = start_date
 
-            if field_mapping.get('due_date') and row.get(field_mapping['due_date']):
-                task_data['due_date'] = row.get(field_mapping['due_date'])
+            due_date = get_field_value(field_mapping, 'due_date', row)
+            if due_date:
+                task_data['due_date'] = due_date
 
-            if field_mapping.get('completed_date') and row.get(field_mapping['completed_date']):
-                task_data['completed_date'] = row.get(field_mapping['completed_date'])
+            completed_date = get_field_value(field_mapping, 'completed_date', row)
+            if completed_date:
+                task_data['completed_date'] = completed_date
 
-            if field_mapping.get('assigned_to') and row.get(field_mapping['assigned_to']):
-                task_data['assigned_to'] = row.get(field_mapping['assigned_to'])
+            assigned_to = get_field_value(field_mapping, 'assigned_to', row)
+            if assigned_to:
+                task_data['assigned_to'] = assigned_to
 
-            if field_mapping.get('tags') and row.get(field_mapping['tags']):
-                task_data['tags'] = [t.strip() for t in row.get(field_mapping['tags']).split(',')]
+            tags = get_field_value(field_mapping, 'tags', row)
+            if tags:
+                task_data['tags'] = [t.strip() for t in tags.split(',')]
 
             # Create or update task
             # Check if task with same title and source exists

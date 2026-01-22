@@ -14,6 +14,9 @@ import {
   Sparkles,
   Repeat,
   Trash2,
+  Link,
+  Unlink,
+  ExternalLink,
 } from "lucide-react";
 import Header from "@/components/layout/header";
 import LoadingSpinner from "@/components/common/loading-spinner";
@@ -32,6 +35,8 @@ import {
   syncTasksToTaiga,
   updateTasksFromTaiga,
   generateTaskDescription,
+  linkTaskToTaiga,
+  unlinkTaskFromTaiga,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { Task, TaskStatus, TaskPriority, RecurrenceType } from "@/lib/types";
@@ -784,6 +789,14 @@ function EditTaskModal({
   const [generatingDescription, setGeneratingDescription] = useState(false);
   const [suggestedTitle, setSuggestedTitle] = useState<string | null>(null);
 
+  // Taiga link state
+  const [taigaUrl, setTaigaUrl] = useState("");
+  const [linkingToTaiga, setLinkingToTaiga] = useState(false);
+  const [unlinkingFromTaiga, setUnlinkingFromTaiga] = useState(false);
+  const [showTaigaLinkForm, setShowTaigaLinkForm] = useState(false);
+  const [taskSourceType, setTaskSourceType] = useState(task.source_type);
+  const [taskSourceUrl, setTaskSourceUrl] = useState(task.source_url);
+
   const handleGenerateDescription = async () => {
     if (!title.trim()) {
       toast.error("Please enter a task title first");
@@ -823,6 +836,55 @@ function EditTaskModal({
     } finally {
       setDeleting(false);
       setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleLinkToTaiga = async () => {
+    if (!taigaUrl.trim()) {
+      toast.error("Please enter a Taiga URL");
+      return;
+    }
+
+    setLinkingToTaiga(true);
+    try {
+      const response = await linkTaskToTaiga(task.id, taigaUrl.trim());
+      if (response.status && response.data) {
+        toast.success(`Linked to Taiga story #${response.data.taiga_ref}`);
+        setTaigaUrl("");
+        setShowTaigaLinkForm(false);
+        // Update local state to show the linked status immediately
+        setTaskSourceType("taiga");
+        setTaskSourceUrl(response.data.taiga_url);
+        onUpdated();
+      } else {
+        toast.error(response.message || "Failed to link to Taiga");
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "Failed to link to Taiga");
+    } finally {
+      setLinkingToTaiga(false);
+    }
+  };
+
+  const handleUnlinkFromTaiga = async () => {
+    if (!confirm("Are you sure you want to unlink this task from Taiga?")) return;
+
+    setUnlinkingFromTaiga(true);
+    try {
+      const response = await unlinkTaskFromTaiga(task.id);
+      if (response.status) {
+        toast.success("Task unlinked from Taiga");
+        // Update local state to show unlinked status immediately
+        setTaskSourceType(undefined);
+        setTaskSourceUrl(undefined);
+        onUpdated();
+      } else {
+        toast.error(response.message || "Failed to unlink from Taiga");
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "Failed to unlink from Taiga");
+    } finally {
+      setUnlinkingFromTaiga(false);
     }
   };
 
@@ -1065,6 +1127,90 @@ function EditTaskModal({
               </p>
             </div>
           )}
+
+          {/* Taiga Link Section */}
+          <div className="border-t pt-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                <Link className="w-4 h-4" />
+                Taiga Integration
+              </label>
+            </div>
+
+            {taskSourceType === "taiga" && taskSourceUrl ? (
+              <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-blue-800">Linked to Taiga</span>
+                  <a
+                    href={taskSourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                  >
+                    Open in Taiga
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUnlinkFromTaiga}
+                  disabled={unlinkingFromTaiga}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded disabled:opacity-50"
+                >
+                  {unlinkingFromTaiga ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Unlink className="w-3 h-3" />
+                  )}
+                  Unlink
+                </button>
+              </div>
+            ) : showTaigaLinkForm ? (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={taigaUrl}
+                  onChange={(e) => setTaigaUrl(e.target.value)}
+                  placeholder="https://taiga.example.org/project/project-slug/us/123"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleLinkToTaiga}
+                    disabled={linkingToTaiga || !taigaUrl.trim()}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {linkingToTaiga ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Link className="w-3 h-3" />
+                    )}
+                    Link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTaigaLinkForm(false);
+                      setTaigaUrl("");
+                    }}
+                    className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowTaigaLinkForm(true)}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                <Link className="w-4 h-4" />
+                Link to existing Taiga card
+              </button>
+            )}
+          </div>
 
           <div className="flex justify-between gap-3 pt-4">
             <button

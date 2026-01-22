@@ -24,6 +24,7 @@ import {
   getTaskFields,
   getSheetSyncConfigs,
   createSheetSyncConfig,
+  updateSheetSyncConfig,
   deleteSheetSyncConfig,
   syncSheetTasks,
 } from "@/lib/api";
@@ -84,8 +85,19 @@ export default function DataSourcesPage() {
   const [previewData, setPreviewData] = useState<{ headers: string[]; rows: string[][]; total_rows: number } | null>(null);
   const [taskFields, setTaskFields] = useState<TaskField[]>([]);
   const [fieldMapping, setFieldMapping] = useState<Record<string, string>>({});
+  const [fieldMappingType, setFieldMappingType] = useState<Record<string, "column" | "custom">>({});
   const [autoSync, setAutoSync] = useState(true);
   const [wizardLoading, setWizardLoading] = useState(false);
+
+  // Edit modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<SheetSyncConfig | null>(null);
+  const [editHeaders, setEditHeaders] = useState<string[]>([]);
+  const [editFieldMapping, setEditFieldMapping] = useState<Record<string, string>>({});
+  const [editFieldMappingType, setEditFieldMappingType] = useState<Record<string, "column" | "custom">>({});
+  const [editAutoSync, setEditAutoSync] = useState(true);
+  const [editLoading, setEditLoading] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     loadConfigs();
@@ -130,6 +142,111 @@ export default function DataSourcesPage() {
     }
   };
 
+  const openEditModal = async (config: SheetSyncConfig) => {
+    setEditingConfig(config);
+    setEditFieldMapping({ ...config.field_mapping });
+    setEditAutoSync(config.auto_sync);
+    setShowEditModal(true);
+    setEditLoading(true);
+
+    try {
+      // Load task fields if not already loaded
+      let fields = taskFields;
+      if (taskFields.length === 0) {
+        const fieldsRes = await getTaskFields();
+        if (fieldsRes.status && fieldsRes.data) {
+          setTaskFields(fieldsRes.data);
+          fields = fieldsRes.data;
+        }
+      }
+
+      // Load headers for the sheet
+      const headersRes = await getSheetHeaders(config.spreadsheet_id, config.sheet_name);
+      if (headersRes.status && headersRes.data) {
+        setEditHeaders(headersRes.data);
+
+        // Determine mapping types based on whether value exists in headers
+        const mappingTypes: Record<string, "column" | "custom"> = {};
+        for (const [fieldName, value] of Object.entries(config.field_mapping)) {
+          // Check if value is a column header or a custom value
+          // Custom values are prefixed with "custom:" to distinguish them
+          if (value.startsWith("custom:")) {
+            mappingTypes[fieldName] = "custom";
+          } else if (headersRes.data.includes(value)) {
+            mappingTypes[fieldName] = "column";
+          } else {
+            // If value doesn't match any header, treat as custom
+            mappingTypes[fieldName] = "custom";
+          }
+        }
+        setEditFieldMappingType(mappingTypes);
+      }
+    } catch (error) {
+      toast.error("Failed to load sheet headers");
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleEditFieldMappingChange = (taskField: string, value: string) => {
+    setEditFieldMapping((prev) => {
+      if (!value) {
+        const { [taskField]: _, ...rest } = prev;
+        return rest;
+      }
+      const mappingType = editFieldMappingType[taskField] || "column";
+      // Prefix custom values with "custom:" to distinguish them
+      const finalValue = mappingType === "custom" ? `custom:${value}` : value;
+      return { ...prev, [taskField]: finalValue };
+    });
+  };
+
+  const handleEditFieldMappingTypeChange = (taskField: string, type: "column" | "custom") => {
+    setEditFieldMappingType((prev) => ({ ...prev, [taskField]: type }));
+    // Clear the value when changing type
+    setEditFieldMapping((prev) => {
+      const { [taskField]: _, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  const getEditFieldValue = (taskField: string): string => {
+    const value = editFieldMapping[taskField] || "";
+    // Remove "custom:" prefix for display
+    if (value.startsWith("custom:")) {
+      return value.substring(7);
+    }
+    return value;
+  };
+
+  const saveEditConfig = async () => {
+    if (!editingConfig) return;
+
+    if (!editFieldMapping.title) {
+      toast.error("Title field mapping is required");
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const response = await updateSheetSyncConfig(editingConfig.id, {
+        field_mapping: editFieldMapping,
+        auto_sync: editAutoSync,
+      });
+
+      if (response.status) {
+        toast.success("Configuration updated");
+        setShowEditModal(false);
+        setEditingConfig(null);
+        loadConfigs();
+      }
+    } catch (error) {
+      toast.error("Failed to update configuration");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const openWizard = async () => {
     setShowWizard(true);
     setWizardStep("select-file");
@@ -138,6 +255,7 @@ export default function DataSourcesPage() {
     setHeaders([]);
     setPreviewData(null);
     setFieldMapping({});
+    setFieldMappingType({});
     setAutoSync(true);
 
     // Load spreadsheets and task fields
@@ -198,14 +316,35 @@ export default function DataSourcesPage() {
     }
   };
 
-  const handleFieldMappingChange = (taskField: string, sheetColumn: string) => {
+  const handleFieldMappingChange = (taskField: string, value: string) => {
     setFieldMapping((prev) => {
-      if (!sheetColumn) {
+      if (!value) {
         const { [taskField]: _, ...rest } = prev;
         return rest;
       }
-      return { ...prev, [taskField]: sheetColumn };
+      const mappingType = fieldMappingType[taskField] || "column";
+      // Prefix custom values with "custom:" to distinguish them
+      const finalValue = mappingType === "custom" ? `custom:${value}` : value;
+      return { ...prev, [taskField]: finalValue };
     });
+  };
+
+  const handleFieldMappingTypeChange = (taskField: string, type: "column" | "custom") => {
+    setFieldMappingType((prev) => ({ ...prev, [taskField]: type }));
+    // Clear the value when changing type
+    setFieldMapping((prev) => {
+      const { [taskField]: _, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  const getFieldValue = (taskField: string): string => {
+    const value = fieldMapping[taskField] || "";
+    // Remove "custom:" prefix for display
+    if (value.startsWith("custom:")) {
+      return value.substring(7);
+    }
+    return value;
   };
 
   const createConfig = async () => {
@@ -351,6 +490,13 @@ export default function DataSourcesPage() {
                       <ExternalLink className="w-4 h-4" />
                     </a>
                     <button
+                      onClick={() => openEditModal(config)}
+                      className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                      title="Edit field mapping"
+                    >
+                      <Settings className="w-4 h-4" />
+                    </button>
+                    <button
                       onClick={() => handleSync(config.id)}
                       disabled={syncing === config.id}
                       className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50"
@@ -374,16 +520,23 @@ export default function DataSourcesPage() {
                 <div className="mt-3 pt-3 border-t border-gray-100">
                   <p className="text-xs text-gray-500 mb-1">Field Mapping:</p>
                   <div className="flex flex-wrap gap-2">
-                    {Object.entries(config.field_mapping).map(([taskField, sheetColumn]) => (
-                      <span
-                        key={taskField}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-xs"
-                      >
-                        <span className="font-medium">{taskField}</span>
-                        <ChevronRight className="w-3 h-3" />
-                        <span>{sheetColumn}</span>
-                      </span>
-                    ))}
+                    {Object.entries(config.field_mapping).map(([taskField, value]) => {
+                      const isCustom = value.startsWith("custom:");
+                      const displayValue = isCustom ? value.substring(7) : value;
+                      return (
+                        <span
+                          key={taskField}
+                          className={cn(
+                            "inline-flex items-center gap-1 px-2 py-1 rounded text-xs",
+                            isCustom ? "bg-purple-100 text-purple-800" : "bg-gray-100"
+                          )}
+                        >
+                          <span className="font-medium">{taskField}</span>
+                          <ChevronRight className="w-3 h-3" />
+                          <span>{isCustom ? `"${displayValue}"` : displayValue}</span>
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -531,31 +684,52 @@ export default function DataSourcesPage() {
                       {/* Field Mapping */}
                       <div className="space-y-3">
                         <p className="text-sm font-medium text-gray-700">
-                          Map sheet columns to task fields:
+                          Map sheet columns to task fields or set custom values:
                         </p>
-                        {taskFields.map((field) => (
-                          <div key={field.name} className="flex items-center gap-4">
-                            <div className="w-32">
-                              <span className="text-sm font-medium text-gray-700">
-                                {field.label}
-                                {field.required && <span className="text-red-500 ml-1">*</span>}
-                              </span>
+                        {taskFields.map((field) => {
+                          const mappingType = fieldMappingType[field.name] || "column";
+                          return (
+                            <div key={field.name} className="flex items-center gap-3">
+                              <div className="w-28 flex-shrink-0">
+                                <span className="text-sm font-medium text-gray-700">
+                                  {field.label}
+                                  {field.required && <span className="text-red-500 ml-1">*</span>}
+                                </span>
+                              </div>
+                              <select
+                                value={mappingType}
+                                onChange={(e) => handleFieldMappingTypeChange(field.name, e.target.value as "column" | "custom")}
+                                className="w-24 px-2 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                              >
+                                <option value="column">Column</option>
+                                <option value="custom">Custom</option>
+                              </select>
+                              <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                              {mappingType === "column" ? (
+                                <select
+                                  value={getFieldValue(field.name)}
+                                  onChange={(e) => handleFieldMappingChange(field.name, e.target.value)}
+                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                >
+                                  <option value="">-- Select column --</option>
+                                  {headers.map((header) => (
+                                    <option key={header} value={header}>
+                                      {header}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={getFieldValue(field.name)}
+                                  onChange={(e) => handleFieldMappingChange(field.name, e.target.value)}
+                                  placeholder="Enter custom value..."
+                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                />
+                              )}
                             </div>
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
-                            <select
-                              value={fieldMapping[field.name] || ""}
-                              onChange={(e) => handleFieldMappingChange(field.name, e.target.value)}
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-                            >
-                              <option value="">-- Select column --</option>
-                              {headers.map((header) => (
-                                <option key={header} value={header}>
-                                  {header}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
                       {/* Auto Sync */}
@@ -592,6 +766,135 @@ export default function DataSourcesPage() {
                   className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
                 >
                   Create Sync
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Field Mapping Modal */}
+      {showEditModal && editingConfig && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Edit Field Mapping</h2>
+                <p className="text-sm text-gray-500">
+                  {editingConfig.spreadsheet_name} - {editingConfig.sheet_name}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingConfig(null);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 max-h-[60vh] overflow-y-auto">
+              {editLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <LoadingSpinner size="lg" />
+                </div>
+              ) : (
+                <>
+                  {/* Field Mapping */}
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium text-gray-700">
+                      Map sheet columns to task fields or set custom values:
+                    </p>
+                    {taskFields.map((field) => {
+                      const mappingType = editFieldMappingType[field.name] || "column";
+                      return (
+                        <div key={field.name} className="flex items-center gap-3">
+                          <div className="w-28 flex-shrink-0">
+                            <span className="text-sm font-medium text-gray-700">
+                              {field.label}
+                              {field.required && <span className="text-red-500 ml-1">*</span>}
+                            </span>
+                          </div>
+                          <select
+                            value={mappingType}
+                            onChange={(e) => handleEditFieldMappingTypeChange(field.name, e.target.value as "column" | "custom")}
+                            className="w-24 px-2 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                          >
+                            <option value="column">Column</option>
+                            <option value="custom">Custom</option>
+                          </select>
+                          <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          {mappingType === "column" ? (
+                            <select
+                              value={getEditFieldValue(field.name)}
+                              onChange={(e) => handleEditFieldMappingChange(field.name, e.target.value)}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                            >
+                              <option value="">-- Select column --</option>
+                              {editHeaders.map((header) => (
+                                <option key={header} value={header}>
+                                  {header}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={getEditFieldValue(field.name)}
+                              onChange={(e) => handleEditFieldMappingChange(field.name, e.target.value)}
+                              placeholder="Enter custom value..."
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Auto Sync */}
+                  <div className="mt-6 flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="editAutoSync"
+                      checked={editAutoSync}
+                      onChange={(e) => setEditAutoSync(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-300 text-primary-600"
+                    />
+                    <label htmlFor="editAutoSync" className="text-sm text-gray-700">
+                      Enable auto-sync (every 15 minutes)
+                    </label>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            {!editLoading && (
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+                <button
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditingConfig(null);
+                  }}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveEditConfig}
+                  disabled={savingEdit || !editFieldMapping.title}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {savingEdit ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4" />
+                  )}
+                  Save Changes
                 </button>
               </div>
             )}
