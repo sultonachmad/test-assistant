@@ -24,7 +24,7 @@ AI-powered productivity assistant that integrates with Google Workspace (Gmail, 
 
 - Python 3.13+
 - Node.js 22+
-- PostgreSQL (running on 192.168.9.227:5439)
+- PostgreSQL instance accessible from your environment
 - LLM Gateway running on localhost:4000
 
 ### Backend Setup
@@ -65,9 +65,9 @@ Frontend will be available at http://localhost:3000
 ### Backend (.env)
 
 ```env
-POSTGRES_DSN=postgresql://postgres:password$1@192.168.9.227:5439/sultan_assistant
+POSTGRES_DSN=postgresql://user:password@localhost:5432/assistant_db
 LLM_GATEWAY_URL=http://localhost:4000
-LLM_GATEWAY_KEY=test123
+LLM_GATEWAY_KEY=your-llm-gateway-key
 GOOGLE_CLIENT_ID=your-client-id
 GOOGLE_CLIENT_SECRET=your-client-secret
 NEXTAUTH_SECRET=your-secret
@@ -125,7 +125,7 @@ SMTP_PASSWORD=ENC:gAAAAABnR5Lw...
 GOOGLE_CLIENT_SECRET=ENC:gAAAAABnR5Mx...
 
 # Plaintext values still work
-LLM_GATEWAY_KEY=test123
+LLM_GATEWAY_KEY=your-llm-gateway-key
 ```
 
 The backend automatically detects and decrypts any value prefixed with `ENC:` when loading settings.
@@ -209,9 +209,6 @@ sulthan-ai-lab-personal-assistant/
 - **On Hold**: Temporarily paused
 - **Done**: Completed
 
-## License
-
-Private - BDO AI Lab
 
 # TODO
 

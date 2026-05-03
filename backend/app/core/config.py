@@ -45,11 +45,11 @@ class Settings(BaseSettings):
         return self
 
     # Database
-    POSTGRES_DSN: str = "postgresql://postgres:password@localhost:5432/sultan_assistant"
+    POSTGRES_DSN: str = "postgresql://user:password@localhost:5432/assistant_db"
 
     # LLM Gateway
     LLM_GATEWAY_URL: str = "http://localhost:4000"
-    LLM_GATEWAY_KEY: str = "test123"
+    LLM_GATEWAY_KEY: str = ""
     LLM_MODEL: str = "gpt-4.1-mini"
     LLM_MODEL_SUMMARY: str = "gpt-4.1-mini"
 

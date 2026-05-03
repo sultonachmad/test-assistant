@@ -11,7 +11,7 @@ This file provides guidance to Claude Code when working with this repository.
 - **Backend**: FastAPI (Python 3.13+) with PostgreSQL
 - **Frontend**: Next.js 15 + React 19 + TailwindCSS
 - **LLM**: LiteLLM gateway proxy (localhost:4000)
-- **Database**: PostgreSQL (192.168.9.227:5439)
+- **Database**: PostgreSQL
 - **Auth**: NextAuth.js with Google OAuth
 
 ## Development Commands
@@ -37,7 +37,7 @@ npm run build  # Production build
 ### Full Stack
 
 ```bash
-# 1. Ensure PostgreSQL is running (192.168.9.227:5439)
+# 1. Ensure PostgreSQL is running and reachable
 # 2. Ensure LLM Gateway is running (localhost:4000)
 
 # 3. Start Backend
@@ -91,12 +91,12 @@ sulthan-ai-lab-personal-assistant/
 
 ### Backend (.env)
 ```
-POSTGRES_DSN=postgresql://postgres:password$1@192.168.9.227:5439/sultan_assistant
+POSTGRES_DSN=postgresql://user:password@localhost:5432/assistant_db
 LLM_GATEWAY_URL=http://localhost:4000
-LLM_GATEWAY_KEY=test123
-GOOGLE_CLIENT_ID=<from toppangpt-fe>
-GOOGLE_CLIENT_SECRET=<from toppangpt-fe>
-NEXTAUTH_SECRET=<from toppangpt-fe>
+LLM_GATEWAY_KEY=your-llm-gateway-key
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+NEXTAUTH_SECRET=your-nextauth-secret
 ```
 
 ### Frontend (.env)
